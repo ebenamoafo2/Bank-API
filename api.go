@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -25,12 +25,12 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccount))
+	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountByID))
 
-	log.Printf("Server running on PORT %s", s.listenAddr)
+	slog.Info("Server running", "address", s.listenAddr)
 	err := http.ListenAndServe(s.listenAddr, router)
 	if err != nil {
-		panic(err)
+		slog.Error("server failed", "error", err)
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 	return fmt.Errorf("method not allowed: %s", r.Method)
 }
 
-func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request) error {
 
 	id := mux.Vars(r)["id"]
 	fmt.Println(id)
@@ -57,14 +57,19 @@ func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) err
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	createAccountRequest := new(CreateAccountRequest)
-	if err := json.NewDecoder(r.Body).Decode(createAccountRequest); err != nil {
+	req := new(CreateAccountRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		return err
 	}
-	account := NewAccount(createAccountRequest.FirstName, createAccountRequest.LastName)
-	if err := s.store.createAccount(account); err != nil {
+
+	account, err := NewAccount(req.FirstName, req.LastName)
+	if err != nil {
 		return err
 	}
+	if err := s.store.CreateAccount(account); err != nil {
+		return err
+	}
+
 	return writeJSON(w, http.StatusCreated, account)
 }
 
@@ -74,6 +79,15 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
 	return nil
+}
+
+// Get /account
+func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
+	accounts, err := s.store.GetAccounts()
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, accounts)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) error {
@@ -92,7 +106,7 @@ func makeHTTPHandleFunc(f apiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := f(w, r); err != nil {
 			//handle the error
-
+			slog.Error("request error", "method", r.Method, "path", r.URL.Path, "error", err)
 			err := writeJSON(w, http.StatusBadRequest, APIError{err.Error()})
 			if err != nil {
 				return

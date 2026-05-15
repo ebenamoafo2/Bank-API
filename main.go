@@ -1,21 +1,26 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 	store, err := NewPostgresStore()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to create store", "error", err)
+		os.Exit(1)
 	}
 
 	if err := store.Init(); err != nil {
-		log.Fatal(err)
+		slog.Error("failed to initialize store", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := store.db.Close(); err != nil {
-			log.Printf("error closing database: %v", err)
+			slog.Error("error closing database", "error", err)
 		}
 	}()
 

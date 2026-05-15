@@ -9,9 +9,9 @@ type Account struct {
 	ID         int       `json:"id"`
 	FirstName  string    `json:"first_name"`
 	LastName   string    `json:"last_name"`
-	BankNumber int       `json:"bank_number"`
-	Balance    int64     `json:"balance"`
-	CreatedAt  time.Time `json:"createdAt"`
+	BankNumber int64     `json:"bank_number"`
+	Balance    float64   `json:"balance"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type CreateAccountRequest struct {
@@ -19,12 +19,11 @@ type CreateAccountRequest struct {
 	LastName  string `json:"last_name"`
 }
 
-func NewAccount(firstname, lastname string) *Account {
+func NewAccount(firstname, lastname string) (*Account, error) {
 	return &Account{
 		FirstName:  firstname,
 		LastName:   lastname,
-		BankNumber: rand.Intn(10),
-		Balance:    0,
+		BankNumber: int64(rand.Intn(1000000)),
 		CreatedAt:  time.Now().UTC(),
-	}
+	}, nil
 }
