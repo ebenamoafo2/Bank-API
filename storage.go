@@ -40,7 +40,11 @@ func NewPostgresStore() (*PostgresStore, error) {
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, err
+		pingErr := err // save the original error
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Error("failed to close db after failed ping", "error", closeErr)
+		}
+		return nil, pingErr // always return the ping error
 	}
 
 	slog.Info("database connection established")
@@ -69,43 +73,39 @@ func (s *PostgresStore) CreateAccountTable() error {
 func (s *PostgresStore) CreateAccount(acc *Account) error {
 	query := `insert into accounts 
 	(first_name, last_name, bank_number, balance, created_at)
-	values ($1, $2, $3, $4, $5)`
+	values ($1, $2, $3, $4, $5) returning id`
 
-	_, err := s.db.Exec(
+	return s.db.QueryRow(
 		query,
 		acc.FirstName,
 		acc.LastName,
 		acc.BankNumber,
 		acc.Balance,
-		acc.CreatedAt)
+		acc.CreatedAt).Scan(&acc.ID)
 
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *PostgresStore) GetAccounts() ([]*Account, error) {
-	rows, err := s.db.Query("SELECT * FROM accounts")
+	const query = `SELECT * FROM accounts`
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
 
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			s.logger.Error("error closing rows", "error", err)
+	defer func() {
+		if err := rows.Close(); err != nil {
+			s.logger.Error("failed to close database rows after querying accounts", "error", err)
 		}
-	}(rows)
+	}()
 
 	var accounts []*Account
 	for rows.Next() {
-		var acc Account
-		if err := rows.Scan(&acc.ID, &acc.FirstName, &acc.LastName, &acc.BankNumber, &acc.Balance, &acc.CreatedAt); err != nil {
+		account, err := scanIntoAccount(rows)
+		if err != nil {
 			return nil, err
 		}
-		accounts = append(accounts, &acc)
+
+		accounts = append(accounts, account)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -113,6 +113,38 @@ func (s *PostgresStore) GetAccounts() ([]*Account, error) {
 	return accounts, nil
 }
 
-func (s *PostgresStore) DeleteAccount(id int) error              { return nil }
-func (s *PostgresStore) UpdateAccount(*Account) error            { return nil }
-func (s *PostgresStore) GetAccountByID(id int) (*Account, error) { return nil, nil }
+func (s *PostgresStore) DeleteAccount(id int) error {
+	const query = `DELETE FROM accounts WHERE id = $1`
+	_, err := s.db.Exec(query, id)
+	return err
+}
+
+func (s *PostgresStore) UpdateAccount(*Account) error { return nil }
+
+func (s *PostgresStore) GetAccountByID(id int) (*Account, error) {
+	const query = `SELECT * FROM accounts WHERE id = $1`
+	rows, err := s.db.Query(query, id)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			s.logger.Error("failed to close database rows after querying account", "error", err)
+		}
+	}()
+	for rows.Next() {
+		account, err := scanIntoAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		return account, nil
+	}
+	return nil, fmt.Errorf("account not found")
+}
+
+func scanIntoAccount(rows *sql.Rows) (*Account, error) {
+	account := new(Account)
+	err := rows.Scan(&account.ID, &account.FirstName, &account.LastName, &account.BankNumber, &account.Balance, &account.CreatedAt)
+	return account, err
+}
