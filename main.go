@@ -8,6 +8,14 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	// load once at startup
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		slog.Error("JWT_SECRET environment variable is not set")
+		os.Exit(1)
+	}
+
 	store, err := NewPostgresStore()
 	if err != nil {
 		slog.Error("failed to create store", "error", err)
@@ -24,6 +32,6 @@ func main() {
 		}
 	}()
 
-	server := NewAPIServer(":3000", store)
+	server := NewAPIServer(":3000", store, jwtSecret) // pass it in
 	server.Run()
 }
