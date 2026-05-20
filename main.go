@@ -1,11 +1,40 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+	"log"
 	"log/slog"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
+func seedAccount(store storage, firstName, lastName, password string) *Account {
+	account, err := NewAccount(firstName, lastName, password)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := store.CreateAccount(account); err != nil {
+		log.Fatal("Seeding failed:")
+	}
+
+	return account
+}
+
+func seedAccounts(store storage) {
+	seedAccount(store, "John", "Doe", "password")
+	seedAccount(store, "Jane", "Doe", "password")
+}
+
 func main() {
+	if err := godotenv.Load(); err != nil {
+		slog.Warn("No .env file found, relying on system environment variables")
+	}
+
+	seed := flag.Bool("seed", false, "seed the database with some accounts")
+	flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -31,6 +60,12 @@ func main() {
 			slog.Error("error closing database", "error", err)
 		}
 	}()
+
+	if *seed {
+		fmt.Println("Seeding database...")
+		seedAccounts(store)
+		os.Exit(0)
+	}
 
 	server := NewAPIServer(":3000", store, jwtSecret) // pass it in
 	server.Run()
