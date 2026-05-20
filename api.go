@@ -61,11 +61,26 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	//acc, err := s.store.GetAccountByNumber(int(req.BankNumber))
-	//if err != nil {
-	//	return err
-	//}
-	return writeJSON(w, http.StatusOK, req)
+	acc, err := s.store.GetAccountByNumber(int(req.BankNumber))
+	if err != nil {
+		return err
+	}
+
+	if !acc.ValidPassword(req.Password) {
+		return fmt.Errorf("not authenticated")
+	}
+
+	token, err := s.createJWT(acc)
+	if err != nil {
+		return err
+	}
+
+	resp := LoginResponse{
+		Token:  token,
+		Number: acc.BankNumber,
+	}
+
+	return writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request) error {
